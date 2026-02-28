@@ -9,6 +9,9 @@ env:
 jobs:
   deploy-preview:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     concurrency:
       group: pr-${{ github.event.number }}
 
