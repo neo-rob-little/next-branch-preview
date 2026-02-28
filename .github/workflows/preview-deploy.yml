@@ -18,6 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Create Neon branch
         id: neon
         if: vars.NEON_PROJECT_ID != ''
@@ -35,10 +39,20 @@ jobs:
             ${{ steps.neon.outputs.db_url_with_pooler != '' &&
                 format('DATABASE_URL={0}', steps.neon.outputs.db_url_with_pooler) || '' }}
 
+      - name: Calculate build time
+        id: duration
+        run: |
+          start=${{ steps.timer.outputs.start }}
+          elapsed=$(( $(date +%s) - start ))
+          mins=$(( elapsed / 60 ))
+          secs=$(( elapsed % 60 ))
+          echo "time=${mins}m ${secs}s" >> "$GITHUB_OUTPUT"
+
       - name: Comment on PR
         uses: thollander/actions-comment-pull-request@v2
         with:
           message: |
             **Preview:** ${{ steps.deploy.outputs.url }}
+            **Build time:** ${{ steps.duration.outputs.time }}
             ${{ steps.neon.outputs.db_url_with_pooler != '' &&
                 format('**Neon branch:** preview/pr-{0}', github.event.number) || '**Neon:** not configured' }}
