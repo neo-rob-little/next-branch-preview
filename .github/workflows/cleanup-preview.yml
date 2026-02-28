@@ -5,6 +5,7 @@ on:
 
 jobs:
   delete-neon-branch:
+    if: vars.NEON_PROJECT_ID != ''
     runs-on: ubuntu-latest
     steps:
       - name: Delete Neon branch

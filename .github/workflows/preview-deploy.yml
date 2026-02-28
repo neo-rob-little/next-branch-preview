@@ -2,7 +2,6 @@ name: Preview Deploy
 on: [pull_request]
 
 env:
-  NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
   FLY_ORG: personal
   FLY_REGION: ams
@@ -18,9 +17,10 @@ jobs:
 
       - name: Create Neon branch
         id: neon
+        if: vars.NEON_PROJECT_ID != '' && secrets.NEON_API_KEY != ''
         uses: neondatabase/create-branch-action@v5
         with:
-          project_id: ${{ env.NEON_PROJECT_ID }}
+          project_id: ${{ vars.NEON_PROJECT_ID }}
           branch_name: preview/pr-${{ github.event.number }}
           api_key: ${{ secrets.NEON_API_KEY }}
 
@@ -28,11 +28,14 @@ jobs:
         id: deploy
         uses: superfly/fly-pr-review-apps@1.6.0
         with:
-          secrets: DATABASE_URL=${{ steps.neon.outputs.db_url_with_pooler }}
+          secrets: >-
+            ${{ steps.neon.outputs.db_url_with_pooler != '' &&
+                format('DATABASE_URL={0}', steps.neon.outputs.db_url_with_pooler) || '' }}
 
       - name: Comment on PR
         uses: thollander/actions-comment-pull-request@v2
         with:
           message: |
             **Preview:** ${{ steps.deploy.outputs.url }}
-            **Neon branch:** preview/pr-${{ github.event.number }}
+            ${{ steps.neon.outputs.db_url_with_pooler != '' &&
+                format('**Neon branch:** preview/pr-{0}', github.event.number) || '**Neon:** not configured' }}
