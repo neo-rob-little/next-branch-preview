@@ -30,6 +30,7 @@ jobs:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           branch_name: preview/pr-${{ github.event.number }}
           api_key: ${{ secrets.NEON_API_KEY }}
+          database: ${{ vars.NEON_DATABASE_NAME || 'neondb' }}
 
       - name: Deploy to Fly.io
         id: deploy
