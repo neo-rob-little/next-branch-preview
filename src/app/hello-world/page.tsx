@@ -18,6 +18,9 @@ export default function HelloWorld() {
 					<span className="rounded-full bg-amber-500/10 px-4 py-1.5 text-sm font-medium text-amber-400 ring-1 ring-amber-500/20">
 						Docker
 					</span>
+					<span className="rounded-full bg-cyan-500/10 px-4 py-1.5 text-sm font-medium text-cyan-400 ring-1 ring-cyan-500/20">
+						Neon
+					</span>
 				</div>
 			</div>
 		</div>
