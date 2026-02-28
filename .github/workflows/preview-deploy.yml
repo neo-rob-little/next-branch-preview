@@ -51,8 +51,19 @@ jobs:
       - name: Comment on PR
         uses: thollander/actions-comment-pull-request@v2
         with:
+          comment_tag: fly-preview
+          mode: upsert
           message: |
-            **Preview:** ${{ steps.deploy.outputs.url }}
-            **Build time:** ${{ steps.duration.outputs.time }}
-            ${{ steps.neon.outputs.db_url_with_pooler != '' &&
-                format('**Neon branch:** preview/pr-{0}', github.event.number) || '**Neon:** not configured' }}
+            <h3>&#9992;&#65039; Preview Deployment</h3>
+
+            | | |
+            |---|---|
+            | **Status** | &#9989; Ready ([Inspect](${{ steps.deploy.outputs.url }})) |
+            | **Preview** | [${{ steps.deploy.outputs.url }}](${{ steps.deploy.outputs.url }}) |
+            | **Build Time** | &#9201; ${{ steps.duration.outputs.time }} |
+            | **Branch** | `${{ github.head_ref }}` |
+            | **Commit** | `${{ github.event.pull_request.head.sha }}` |
+            | **Database** | ${{ steps.neon.outputs.db_url_with_pooler != '' && format('&#9989; `preview/pr-{0}`', github.event.number) || '&#11036; Not configured' }} |
+
+            ---
+            <sub>Deployed to <a href="https://fly.io">Fly.io</a> &mdash; updated ${{ github.event.pull_request.updated_at }}</sub>
