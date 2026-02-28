@@ -25,20 +25,35 @@ jobs:
       - name: Create Neon branch
         id: neon
         if: vars.NEON_PROJECT_ID != ''
-        uses: neondatabase/create-branch-action@v5
-        with:
-          project_id: ${{ vars.NEON_PROJECT_ID }}
-          branch_name: preview/pr-${{ github.event.number }}
-          api_key: ${{ secrets.NEON_API_KEY }}
-          database: ${{ vars.NEON_DATABASE_NAME || 'neondb' }}
+        run: |
+          npm i -g neonctl@2 2>/dev/null
+
+          BRANCH_NAME="preview/pr-${{ github.event.number }}"
+          PROJECT_ID="${{ vars.NEON_PROJECT_ID }}"
+          DB_NAME="${{ vars.NEON_DATABASE_NAME || 'neondb' }}"
+
+          neonctl branches create \
+            --project-id "$PROJECT_ID" \
+            --name "$BRANCH_NAME" \
+            --api-key "${{ secrets.NEON_API_KEY }}" 2>/dev/null || true
+
+          DB_URL=$(neonctl connection-string \
+            --project-id "$PROJECT_ID" \
+            --branch "$BRANCH_NAME" \
+            --database-name "$DB_NAME" \
+            --pooled \
+            --api-key "${{ secrets.NEON_API_KEY }}")
+
+          echo "::add-mask::$DB_URL"
+          echo "db_url=$DB_URL" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Fly.io
         id: deploy
         uses: superfly/fly-pr-review-apps@1.6.0
         with:
           secrets: >-
-            ${{ steps.neon.outputs.db_url_with_pooler != '' &&
-                format('DATABASE_URL={0}', steps.neon.outputs.db_url_with_pooler) || '' }}
+            ${{ steps.neon.outputs.db_url != '' &&
+                format('DATABASE_URL={0}', steps.neon.outputs.db_url) || '' }}
 
       - name: Calculate build time
         id: duration
@@ -64,7 +79,7 @@ jobs:
             | **Build Time** | &#9201; ${{ steps.duration.outputs.time }} |
             | **Branch** | `${{ github.head_ref }}` |
             | **Commit** | `${{ github.event.pull_request.head.sha }}` |
-            | **Database** | ${{ steps.neon.outputs.db_url_with_pooler != '' && format('&#9989; `preview/pr-{0}`', github.event.number) || '&#11036; Not configured' }} |
+            | **Database** | ${{ steps.neon.outputs.db_url != '' && format('&#9989; `preview/pr-{0}`', github.event.number) || '&#11036; Not configured' }} |
 
             ---
             <sub>Deployed to <a href="https://fly.io">Fly.io</a> &mdash; updated ${{ github.event.pull_request.updated_at }}</sub>
