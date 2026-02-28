@@ -17,7 +17,7 @@ jobs:
 
       - name: Create Neon branch
         id: neon
-        if: vars.NEON_PROJECT_ID != '' && secrets.NEON_API_KEY != ''
+        if: vars.NEON_PROJECT_ID != ''
         uses: neondatabase/create-branch-action@v5
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
