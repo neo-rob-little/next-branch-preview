@@ -1,4 +1,4 @@
-ARG NODE_VERSION=20.18.0-slim
+ARG NODE_VERSION=22-slim
 
 FROM node:${NODE_VERSION} AS dependencies
 WORKDIR /app
