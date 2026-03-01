@@ -1,5 +1,5 @@
 app = 'next-branch-preview'
-primary_region = 'ams'
+primary_region = 'yyz'
 
 [build]
 

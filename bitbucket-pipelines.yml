@@ -36,7 +36,7 @@ pipelines:
               if [ -n "$DATABASE_URL" ]; then
                 flyctl secrets set DATABASE_URL="$DATABASE_URL" --app "$FLY_APP"
               fi
-            - flyctl deploy --app "$FLY_APP" --region ams --remote-only
+            - flyctl deploy --app "$FLY_APP" --region yyz --remote-only
 
             - |
               ELAPSED=$(( $(date +%s) - START_TIME ))

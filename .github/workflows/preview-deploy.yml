@@ -4,7 +4,7 @@ on: [pull_request]
 env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
   FLY_ORG: personal
-  FLY_REGION: ams
+  FLY_REGION: yyz
 
 jobs:
   deploy-preview:
