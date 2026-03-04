@@ -1,4 +1,4 @@
-image: node:20
+image: node:22
 
 pipelines:
   pull-requests:
@@ -7,20 +7,47 @@ pipelines:
           name: Deploy Preview
           services: [docker]
           script:
+            - START_TIME=$(date +%s)
             - apt-get update && apt-get install -y curl
             - curl -L https://fly.io/install.sh | sh
             - export PATH="$HOME/.fly/bin:$PATH"
-            - npm ci
-            - npx neonctl branches create --project-id $NEON_PROJECT_ID --name "preview/pr-${BITBUCKET_PR_ID}" --api-key $NEON_API_KEY || true
-            - export DATABASE_URL=$(npx neonctl connection-string --project-id $NEON_PROJECT_ID --branch "preview/pr-${BITBUCKET_PR_ID}" --database-name neondb --pooled --api-key $NEON_API_KEY)
-            - export FLY_APP="pr-${BITBUCKET_PR_ID}-nextjs-preview-poc"
-            - flyctl apps create $FLY_APP || true
-            - flyctl secrets set DATABASE_URL="$DATABASE_URL" --app $FLY_APP
-            - flyctl deploy --app $FLY_APP --remote-only
+
+            - export FLY_APP="pr-${BITBUCKET_PR_ID}-next-branch-preview"
+            - export BRANCH_NAME="preview/pr-${BITBUCKET_PR_ID}"
+            - export DB_NAME="${NEON_DATABASE_NAME:-neondb}"
+
             - |
+              if [ -n "$NEON_PROJECT_ID" ] && [ -n "$NEON_API_KEY" ]; then
+                npm i -g neonctl@2 2>/dev/null
+                neonctl branches create \
+                  --project-id "$NEON_PROJECT_ID" \
+                  --name "$BRANCH_NAME" \
+                  --api-key "$NEON_API_KEY" 2>/dev/null || true
+                export DATABASE_URL=$(neonctl connection-string \
+                  --project-id "$NEON_PROJECT_ID" \
+                  --branch "$BRANCH_NAME" \
+                  --database-name "$DB_NAME" \
+                  --pooled \
+                  --api-key "$NEON_API_KEY")
+              fi
+
+            - flyctl apps create "$FLY_APP" --org personal 2>/dev/null || true
+            - |
+              if [ -n "$DATABASE_URL" ]; then
+                flyctl secrets set DATABASE_URL="$DATABASE_URL" --app "$FLY_APP"
+              fi
+            - flyctl deploy --app "$FLY_APP" --region yyz --remote-only
+
+            - |
+              ELAPSED=$(( $(date +%s) - START_TIME ))
+              MINS=$(( ELAPSED / 60 ))
+              SECS=$(( ELAPSED % 60 ))
+              BUILD_TIME="${MINS}m ${SECS}s"
+              DB_STATUS="Not configured"
+              if [ -n "$DATABASE_URL" ]; then DB_STATUS="preview/pr-${BITBUCKET_PR_ID}"; fi
               curl -s -X POST -u "${BB_AUTH_USER}:${BB_AUTH_TOKEN}" \
                 -H "Content-Type: application/json" \
-                -d "{\"content\": {\"raw\": \"**Preview:** https://${FLY_APP}.fly.dev\\n**Neon branch:** preview/pr-${BITBUCKET_PR_ID}\"}}" \
+                -d "{\"content\": {\"raw\": \"### Preview Deployment\\n| | |\\n|---|---|\\n| **Preview** | https://${FLY_APP}.fly.dev |\\n| **Build Time** | ${BUILD_TIME} |\\n| **Branch** | ${BITBUCKET_BRANCH} |\\n| **Database** | ${DB_STATUS} |\"}}" \
                 "https://api.bitbucket.org/2.0/repositories/${BITBUCKET_REPO_FULL_NAME}/pullrequests/${BITBUCKET_PR_ID}/comments"
 
   custom:
@@ -31,5 +58,11 @@ pipelines:
           name: Cleanup Preview
           script:
             - curl -L https://fly.io/install.sh | sh && export PATH="$HOME/.fly/bin:$PATH"
-            - flyctl apps destroy "pr-${PR_ID}-nextjs-preview-poc" --yes || true
-            - npx neonctl branches delete "preview/pr-${PR_ID}" --project-id $NEON_PROJECT_ID --api-key $NEON_API_KEY || true
+            - flyctl apps destroy "pr-${PR_ID}-next-branch-preview" --yes || true
+            - |
+              if [ -n "$NEON_PROJECT_ID" ] && [ -n "$NEON_API_KEY" ]; then
+                npm i -g neonctl@2 2>/dev/null
+                neonctl branches delete "preview/pr-${PR_ID}" \
+                  --project-id "$NEON_PROJECT_ID" \
+                  --api-key "$NEON_API_KEY" || true
+              fi

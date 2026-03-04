@@ -4,38 +4,86 @@ on: [pull_request]
 env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
   FLY_ORG: personal
-  FLY_REGION: ams
+  FLY_REGION: yyz
 
 jobs:
   deploy-preview:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     concurrency:
       group: pr-${{ github.event.number }}
 
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Create Neon branch
         id: neon
-        if: vars.NEON_PROJECT_ID != '' && secrets.NEON_API_KEY != ''
-        uses: neondatabase/create-branch-action@v5
-        with:
-          project_id: ${{ vars.NEON_PROJECT_ID }}
-          branch_name: preview/pr-${{ github.event.number }}
-          api_key: ${{ secrets.NEON_API_KEY }}
+        if: vars.NEON_PROJECT_ID != ''
+        run: |
+          npm i -g neonctl@2 2>/dev/null
+
+          BRANCH_NAME="preview/pr-${{ github.event.number }}"
+          PROJECT_ID="${{ vars.NEON_PROJECT_ID }}"
+          DB_NAME="${{ vars.NEON_DATABASE_NAME || 'neondb' }}"
+
+          neonctl branches create \
+            --project-id "$PROJECT_ID" \
+            --name "$BRANCH_NAME" \
+            --api-key "${{ secrets.NEON_API_KEY }}" 2>/dev/null || true
+
+          DB_URL=$(neonctl connection-string \
+            --project-id "$PROJECT_ID" \
+            --branch "$BRANCH_NAME" \
+            --database-name "$DB_NAME" \
+            --pooled \
+            --api-key "${{ secrets.NEON_API_KEY }}")
+
+          echo "::add-mask::$DB_URL"
+          echo "db_url=$DB_URL" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Fly.io
         id: deploy
         uses: superfly/fly-pr-review-apps@1.6.0
         with:
           secrets: >-
-            ${{ steps.neon.outputs.db_url_with_pooler != '' &&
-                format('DATABASE_URL={0}', steps.neon.outputs.db_url_with_pooler) || '' }}
+            ${{ steps.neon.outputs.db_url != '' &&
+                format('DATABASE_URL={0}', steps.neon.outputs.db_url) || '' }}
+
+      - name: Calculate build time
+        id: duration
+        run: |
+          start=${{ steps.timer.outputs.start }}
+          elapsed=$(( $(date +%s) - start ))
+          mins=$(( elapsed / 60 ))
+          secs=$(( elapsed % 60 ))
+          echo "time=${mins}m ${secs}s" >> "$GITHUB_OUTPUT"
 
       - name: Comment on PR
         uses: thollander/actions-comment-pull-request@v2
         with:
+          comment_tag: fly-preview
+          mode: upsert
           message: |
-            **Preview:** ${{ steps.deploy.outputs.url }}
-            ${{ steps.neon.outputs.db_url_with_pooler != '' &&
-                format('**Neon branch:** preview/pr-{0}', github.event.number) || '**Neon:** not configured' }}
+            <h3>&#9992;&#65039; Preview Deployment</h3>
+
+            | | |
+            |---|---|
+            | **Status** | &#9989; Ready ([Inspect](${{ steps.deploy.outputs.url }})) |
+            | **Preview** | [${{ steps.deploy.outputs.url }}](${{ steps.deploy.outputs.url }}) |
+            | **Build Time** | &#9201; ${{ steps.duration.outputs.time }} |
+            | **Branch** | `${{ github.head_ref }}` |
+            | **Commit** | `${{ github.event.pull_request.head.sha }}` |
+            | **Database** | ${{ steps.neon.outputs.db_url != '' && format('&#9989; `preview/pr-{0}`', github.event.number) || '&#11036; Not configured' }} |
+
+            ---
+            <sub>Deployed to <a href="https://fly.io">Fly.io</a> &mdash; updated ${{ github.event.pull_request.updated_at }}</sub>
