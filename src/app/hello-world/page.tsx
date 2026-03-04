@@ -6,7 +6,7 @@ export default function HelloWorld() {
 					Hello, World
 				</h1>
 				<p className="mt-4 text-lg text-zinc-400">
-					Deployed via Fly.io preview stack
+					Deployed via Fly.io & Github Actions preview stack
 				</p>
 				<div className="mt-8 flex justify-center gap-3">
 					<span className="rounded-full bg-emerald-500/10 px-4 py-1.5 text-sm font-medium text-emerald-400 ring-1 ring-emerald-500/20">
