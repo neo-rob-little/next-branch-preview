@@ -1,0 +1,27 @@
+---
+description: Next.js server-side rendering and data-loading patterns for explicit server files
+globs: src/**/*.{server.ts,server.tsx,server.js,server.jsx}
+alwaysApply: false
+---
+
+# Next.js Server File Conventions
+
+- Use explicit `*.server.*` files for server-only modules, helpers, and components.
+- Keep these files free of browser-only hooks like `useState` and `useEffect`.
+- Fetch data on the server with `fetch()` or other server-side data access.
+- Prefer keeping request-time logic, caching, and revalidation decisions close to the server file that owns the data access.
+- Use `cache: 'no-store'` only when the data must be fresh on every request.
+- Use `revalidate` or `next: { revalidate: ... }` when data can stay cached and refresh over time.
+- If the file reads request-specific data like `cookies()` or `headers()`, treat that path as dynamic.
+
+## Revalidation
+
+- Use `revalidatePath('/path')` after mutations when a route should refresh.
+- Use `revalidateTag('tag')` when several routes share one cached data source.
+
+## Rules Of Thumb
+
+- Put server-only logic here when it should not ship to the client.
+- Keep rendering decisions static by default.
+- Move to dynamic rendering only when freshness or request-specific data requires it.
+- Prefer small, composable server helpers over mixing server and client concerns in one file.

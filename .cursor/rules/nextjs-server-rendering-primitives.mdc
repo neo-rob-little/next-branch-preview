@@ -1,0 +1,405 @@
+---
+description: Next.js App Router rendering and data-loading patterns for route entrypoints
+globs: src/app/**/{page,layout,loading,template,default,error,not-found}.{ts,tsx,js,jsx}
+alwaysApply: false
+---
+
+# Next.js 16 Server Rendering / Server-Side Primitives
+
+Concise patterns for the App Router, based on the official docs.
+
+## Core Mental Model
+
+In modern Next.js, the main server-side patterns are:
+
+- Server Components by default
+- Static rendering by default
+- Dynamic rendering for request-time data
+- Streaming with `loading.tsx` or `Suspense`
+- ISR for static pages that refresh in the background
+- Server Actions for forms and mutations
+- Cache invalidation with `revalidatePath()` and `revalidateTag()`
+
+## 1. Server And Client Components
+
+Pages and layouts in `app/` are Server Components by default.
+
+Use a Server Component when:
+
+- you fetch data on the server
+- you want less client JavaScript
+- you do not need browser-only hooks like `useState`
+
+```tsx
+// app/posts/page.tsx
+export default async function Page() {
+	const res = await fetch('https://api.example.com/posts')
+	const posts = await res.json()
+
+	return (
+		<ul>
+			{posts.map((post: { id: string; title: string }) => (
+				<li key={post.id}>{post.title}</li>
+			))}
+		</ul>
+	)
+}
+```
+
+Use `'use client'` only for interactive pieces.
+
+```tsx
+'use client'
+
+import { useState } from 'react'
+
+export function Counter() {
+	const [count, setCount] = useState(0)
+
+	return <button onClick={() => setCount(count + 1)}>{count}</button>
+}
+```
+
+## 2. Static Rendering
+
+By default, Next.js tries to cache as much as possible. That means many routes
+are statically rendered and reused across requests.
+
+```tsx
+// app/blog/page.tsx
+export default async function Page() {
+	const res = await fetch('https://api.example.com/posts')
+	const posts = await res.json()
+
+	return (
+		<ul>
+			{posts.map((post: { id: string; title: string }) => (
+				<li key={post.id}>{post.title}</li>
+			))}
+		</ul>
+	)
+}
+```
+
+This is server-rendered, but it is not the same as per-request SSR.
+
+## 3. Dynamic Rendering
+
+If you need fresh data on every request, opt out of the route cache.
+
+```tsx
+// app/dashboard/page.tsx
+async function getProjects() {
+	const res = await fetch('https://api.example.com/projects', {
+		cache: 'no-store',
+	})
+
+	return res.json()
+}
+
+export default async function DashboardPage() {
+	const projects = await getProjects()
+
+	return (
+		<ul>
+			{projects.map((project: { id: string; name: string }) => (
+				<li key={project.id}>{project.name}</li>
+			))}
+		</ul>
+	)
+}
+```
+
+This is the App Router version of classic SSR.
+
+A route also becomes dynamic when it uses request-specific data like
+`cookies()`, `headers()`, or `searchParams`.
+
+```tsx
+// app/account/page.tsx
+import { cookies } from 'next/headers'
+
+export default async function AccountPage() {
+	const theme = (await cookies()).get('theme')?.value
+
+	return <p>Theme: {theme}</p>
+}
+```
+
+## 4. Streaming
+
+Streaming lets the user see part of the UI before all data is ready.
+
+### Route-level streaming with `loading.tsx`
+
+```tsx
+// app/reports/loading.tsx
+export default function Loading() {
+	return <p>Loading reports...</p>
+}
+```
+
+```tsx
+// app/reports/page.tsx
+export default async function ReportsPage() {
+	const res = await fetch('https://api.example.com/reports', {
+		cache: 'no-store',
+	})
+	const reports = await res.json()
+
+	return <pre>{JSON.stringify(reports, null, 2)}</pre>
+}
+```
+
+### Component-level streaming with `Suspense`
+
+```tsx
+// app/analytics/page.tsx
+import { Suspense } from 'react'
+
+async function SlowChart() {
+	const res = await fetch('https://api.example.com/analytics', {
+		cache: 'no-store',
+	})
+	const data = await res.json()
+
+	return <pre>{JSON.stringify(data, null, 2)}</pre>
+}
+
+export default function AnalyticsPage() {
+	return (
+		<>
+			<h1>Analytics</h1>
+			<Suspense fallback={<p>Loading chart...</p>}>
+				<SlowChart />
+			</Suspense>
+		</>
+	)
+}
+```
+
+Use `loading.tsx` for the route shell. Use `Suspense` for slower nested parts.
+
+## 5. ISR
+
+ISR means:
+
+- the route is still static
+- the result is cached
+- after the revalidation window passes, the next request gets stale content
+- Next.js regenerates a fresh version in the background
+- later requests get the new cached version
+
+### Time-based ISR
+
+```tsx
+// app/blog/page.tsx
+export const revalidate = 3600
+
+export default async function BlogPage() {
+	const res = await fetch('https://api.example.com/posts')
+	const posts = await res.json()
+
+	return (
+		<ul>
+			{posts.map((post: { id: string; title: string }) => (
+				<li key={post.id}>{post.title}</li>
+			))}
+		</ul>
+	)
+}
+```
+
+This keeps the page static, but allows it to refresh at most once per hour.
+
+You can also set revalidation on an individual fetch:
+
+```tsx
+await fetch('https://api.example.com/posts', {
+	next: { revalidate: 3600 },
+})
+```
+
+### ISR For Dynamic Routes
+
+```tsx
+// app/blog/[id]/page.tsx
+export const revalidate = 3600
+
+export async function generateStaticParams() {
+	const posts = await fetch('https://api.example.com/posts').then((res) =>
+		res.json(),
+	)
+
+	return posts.map((post: { id: string }) => ({
+		id: String(post.id),
+	}))
+}
+
+export default async function Page({
+	params,
+}: {
+	params: Promise<{ id: string }>
+}) {
+	const { id } = await params
+
+	const post = await fetch(`https://api.example.com/posts/${id}`).then((res) =>
+		res.json(),
+	)
+
+	return <h1>{post.title}</h1>
+}
+```
+
+Important: if a route uses `cache: 'no-store'`, or otherwise becomes dynamic,
+it is no longer using ISR for that route render.
+
+## 6. On-Demand Revalidation
+
+When data changes, invalidate the cached route or tagged data.
+
+### Revalidate a route
+
+```tsx
+// app/actions.ts
+'use server'
+
+import { revalidatePath } from 'next/cache'
+
+export async function createPost(formData: FormData) {
+	const title = String(formData.get('title') || '')
+
+	await fetch('https://api.example.com/posts', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ title }),
+	})
+
+	revalidatePath('/blog')
+}
+```
+
+### Revalidate tagged data
+
+```tsx
+await fetch('https://api.example.com/posts', {
+	next: { tags: ['posts'] },
+})
+```
+
+```tsx
+// app/actions.ts
+'use server'
+
+import { revalidateTag } from 'next/cache'
+
+export async function refreshPosts() {
+	revalidateTag('posts')
+}
+```
+
+Prefer `revalidatePath()` for most cases. Use `revalidateTag()` when several
+pages share the same cached data source.
+
+## 7. Caching Mental Model
+
+The caching guide breaks things down into four layers:
+
+- Request Memoization: dedupes the same work during a single render
+- Data Cache: persists fetched data on the server
+- Full Route Cache: caches the rendered HTML and RSC payload
+- Router Cache: caches RSC payloads in the browser during navigation
+
+The simplest rule is:
+
+- default behavior leans static and cached
+- `cache: 'no-store'` makes data request-time fresh
+- `revalidate` keeps a route static but refreshable
+- `cookies()`, `headers()`, and `searchParams` make a route dynamic
+
+## 8. Forms And Server Actions
+
+Server Actions are the main modern mutation pattern in App Router forms.
+
+```tsx
+// app/invoices/page.tsx
+export default function Page() {
+	async function createInvoice(formData: FormData) {
+		'use server'
+
+		const rawFormData = {
+			customerId: formData.get('customerId'),
+			amount: formData.get('amount'),
+			status: formData.get('status'),
+		}
+
+		console.log(rawFormData)
+	}
+
+	return (
+		<form action={createInvoice}>
+			<input name="customerId" />
+			<input name="amount" />
+			<input name="status" />
+			<button type="submit">Save</button>
+		</form>
+	)
+}
+```
+
+For richer UX, use `useActionState` and `useFormStatus`.
+
+```tsx
+'use client'
+
+import { useActionState } from 'react'
+import { useFormStatus } from 'react-dom'
+
+function SubmitButton() {
+	const { pending } = useFormStatus()
+
+	return (
+		<button disabled={pending} type="submit">
+			Save
+		</button>
+	)
+}
+
+export function Signup({
+	action,
+}: {
+	action: (
+		prevState: { message: string },
+		formData: FormData,
+	) => Promise<{ message: string }>
+}) {
+	const [state, formAction] = useActionState(action, { message: '' })
+
+	return (
+		<form action={formAction}>
+			<input name="email" required type="email" />
+			<p aria-live="polite">{state.message}</p>
+			<SubmitButton />
+		</form>
+	)
+}
+```
+
+## Rules Of Thumb
+
+- Start with a Server Component.
+- If the page can be cached, keep it static.
+- If it must be fresh every request, use `cache: 'no-store'`.
+- If it should stay static but update over time, use ISR with `revalidate`.
+- If data changes after a mutation, call `revalidatePath()` or
+  `revalidateTag()`.
+- Use `loading.tsx` and `Suspense` for streaming.
+- Use Server Actions for form submissions and mutations.
+
+## Official Docs
+
+- https://nextjs.org/docs/app/getting-started/server-and-client-components
+- https://nextjs.org/docs/app/getting-started/fetching-data#streaming
+- https://nextjs.org/docs/app/guides/incremental-static-regeneration
+- https://nextjs.org/docs/app/guides/caching
+- https://nextjs.org/docs/app/guides/forms
